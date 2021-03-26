@@ -1,15 +1,20 @@
 package fi.oamk.chat
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.text.InputType
 import android.util.Log
 import android.view.KeyEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -22,17 +27,20 @@ import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 class MainActivity : AppCompatActivity() {
 
     private val TAG: String = MainActivity::class.java.name
     private lateinit var auth: FirebaseAuth
     private var currentUser: FirebaseUser? = null
-    private lateinit var messages: ArrayList<String>
+    private lateinit var messages: ArrayList<Message>
     private lateinit var database: DatabaseReference
     private lateinit var edMessage: EditText
     private lateinit var rcMessageList: RecyclerView
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -43,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         database = Firebase.database.reference
         auth = Firebase.auth
 
-        messages = arrayListOf()
+        messages = arrayListOf<Message>()
 
         edMessage.setOnKeyListener { v, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP){
@@ -54,23 +62,6 @@ class MainActivity : AppCompatActivity() {
 
         }
 
-        val messageListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                if (snapshot.value != null) {
-                    val messagesFromDatabase =
-                        (snapshot.value as HashMap<*, ArrayList<String>>).get("messages")
-                    messages.clear()
-                    messagesFromDatabase?.forEach {
-                        if (it != null) messages.add(it)
-                    }
-                    rcMessageList.adapter?.notifyDataSetChanged()
-                }
-            }
-
-            override fun onCancelled(error: DatabaseError) {
-                Log.d("Chat", error.toString())
-            }
-        }
 
         database.addValueEventListener(messageListener)
         rcMessageList.layoutManager = LinearLayoutManager(this)
@@ -79,12 +70,19 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     fun addMessage() {
-        val newMessage = edMessage.text.toString()
+        val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+        val newMessage: Message = Message(edMessage.text.toString(),
+            currentUser?.email.toString(),
+            formatter.format(LocalDateTime.now()))
         messages.add(newMessage)
+
         database.child("messages").setValue(messages)
         edMessage.setText("")
+
         closeKeyBoard()
+        rcMessageList.smoothScrollToPosition(rcMessageList.adapter!!.itemCount-1)
     }
 
     private fun closeKeyBoard() {
@@ -97,8 +95,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        currentUser = auth.currentUser
+        if(currentUser == null) loginDialog()
+    }
 
-        loginDialog()
+    fun showSettings(){
+        val intent = Intent(this, Settings::class.java).apply {
+            putExtra("currentUser", currentUser)
+        }
+        startActivity(intent)
+
     }
 
     fun loginDialog() {
@@ -148,5 +154,47 @@ class MainActivity : AppCompatActivity() {
                     ).show()
                 }
             }
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        val inflater = menuInflater
+        inflater.inflate(R.menu.app_menu, menu)
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem) = when (item.itemId) {
+        R.id.settings -> {
+            this.showSettings()
+            true
+        } else -> {
+            super.onOptionsItemSelected(item)
+        }
+
+    }
+
+    val messageListener = object : ValueEventListener{
+        override fun onCancelled(error: DatabaseError) {
+            TODO("Not yet implemented")
+        }
+
+        override fun onDataChange(snapshot: DataSnapshot) {
+            if(snapshot.value != null){
+                val messagesFromFirebase =
+                    (snapshot.value as HashMap<*, ArrayList<Message>>).get("messages")
+                messages.clear()
+
+                if(messagesFromFirebase != null){
+                    for (i in 0..messagesFromFirebase.size-1){
+                        if(messagesFromFirebase.get(i) != null){
+                            val message: Message = Message.from(messagesFromFirebase.get(i) as HashMap<String, String>)
+                            messages.add(message)
+                        }
+                    }
+                }
+
+                rcMessageList.adapter?.notifyDataSetChanged()
+                rcMessageList.smoothScrollToPosition(rcMessageList.adapter!!.itemCount-1)
+            }
+        }
     }
 }
