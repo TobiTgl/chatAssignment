@@ -62,11 +62,9 @@ class MainActivity : AppCompatActivity() {
 
         }
 
-
         database.addValueEventListener(messageListener)
         rcMessageList.layoutManager = LinearLayoutManager(this)
         rcMessageList.adapter = MyAdapter(messages)
-
 
     }
 
